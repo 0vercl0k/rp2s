@@ -47,12 +47,6 @@
 import sys
 import operator
 import symexec
-import amoco
-import amoco.system.raw
-import amoco.system.core
-import amoco.cas.smt
-import amoco.arch.x86.cpu_x86 as cpu
-import amoco.db
 import argparse
 import multiprocessing
 import time
@@ -60,7 +54,6 @@ import traceback
 import cPickle
 
 from collections import namedtuple
-from amoco.cas.expressions import *
 
 class HandleLineFromFile(object):
     def __init__(self, g_dict, maxtuples):
@@ -153,35 +146,6 @@ class HandleCandidateAnalysis(object):
                 print '?? %s with %s:%r' % (str(e), disass, bytes)
                 traceback.print_exc()
             # pass
-
-def are_cpu_states_equivalent_or(target, candidate):
-    '''This function tries to compare a set of constraints & a symbolic CPU state. The idea
-    is simple:
-        * `target` is basically a list of `constraints`
-        * `candidate` is a `mapper` instance
-
-    Every constraints inside target are going to be checked against the mapper `candidate`,
-    if one of them is satisfied, it returns True, else False.'''
-    valid = False
-    for constraint in target:
-        reg, exp, op = constraint.src, constraint.constraint, constraint.operator
-        if op in (operator.gt, operator.ge, operator.lt, operator.le):
-            # little trick here
-            #   In [42]: from z3 import *
-            #   In [43]: a, b = BitVecs('a b', 32)
-            #   In [44]: prove(UGT((a + 10), (a+3)))
-            #    counterexample
-            #    [a = 4294967287] :((((
-            #   In [65]: prove(((a+10)-(a+3)) > 0)
-            #    proved - yay!
-            valid |= prove_(op(0, exp.to_smtlib() - candidate[reg].to_smtlib()))
-        else:
-            valid |= prove_(op(exp.to_smtlib(), candidate[reg].to_smtlib()))
-
-        if valid == True:
-            break
-
-    return valid
 
 # def primitive_write4(candidates, where, what, preserved_registers = None):
 #     gpr = [ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx, cpu.esi, cpu.edi ]
