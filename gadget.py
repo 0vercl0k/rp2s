@@ -23,6 +23,8 @@ import sys
 import symexec
 import utils
 import operator
+# XXX: this is ugly -- ideally we shouldn't need to import any amoco stuff in here
+import amoco.arch.x86.cpu_x86 as cpu
 
 class Constraint(object):
     '''A constraint is basically a `src` that can be a register or a memory location,
@@ -83,7 +85,6 @@ class Gadget(object):
         eip = self._mapper[cpu.eip]
         if eip._is_mem and eip.a.base._is_reg and eip.a.base.ref == 'esp' and 0 <= eip.a.disp < 0x100:
             return True, eip.a.disp
-
         return False, None
 
     def to_smtlib(self):
@@ -96,14 +97,13 @@ class Gadget(object):
         return Constraint(items, self._mapper[items])
 
     def __str__(self):
-        s = ''
-        s += 'Gadget: ', self._disassembly, repr(self._bytes)[ : 40]
-        s += '  -> Preserved registers:', ','.join(str, self.preserved_registers)
-        s += '  -> Chainable from stack?', self._chainable_from_stack
-        if self._chainable_from_stack:
-            s += '    -> Stack-offset to chain:', self._stackoffset_for_chaining
-
-        return s
+        s = []
+        s.append('Gadget: %s; %s' % (self._disassembly, repr(self._bytes)[ : 40]))
+        s.append('  -> Preserved registers: %s' % ', '.join(map(str, self.preserved_registers)))
+        s.append('  -> Chainable from stack? %s' % self._is_chainable)
+        if self._is_chainable:
+            s.append('    -> Stack-offset to chain: %s' % self._stackoffset_for_chaining)
+        return '\n'.join(s)
 
 def main(argc, argv):
     return 1
