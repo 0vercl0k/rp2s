@@ -46,6 +46,7 @@
 
 import sys
 import operator
+import symexec
 import amoco
 import amoco.system.raw
 import amoco.system.core
@@ -59,174 +60,7 @@ import traceback
 import cPickle
 
 from collections import namedtuple
-from z3 import *
 from amoco.cas.expressions import *
-
-class Constraint(object):
-    '''A constraint is basically a `src` that can be a register or a memory location,
-    an operator & an equation.
-    Note that you can also supply your own comparaison operator as soon as it takes two things in input & return a boolean.
-
-    Here is an example:
-        * src = esp, operator = '=', constraint = eax + 100
-          - It basically means that you want that ESP = EAX + 100 at the end of the execution of the gadget
-
-        * src = esp, operator = '<', constraint = esp + 100
-          - It basically means that you want that ESP < ESP + 100 at the end of the execution of the gadget
-    '''
-    def __init__(self, src, constraint, op = operator.eq):
-        self.src = src
-        self.constraint = constraint
-        self.operator = op
-
-def sym_exec_gadget_and_get_mapper(code, address_code = 0xdeadbeef):
-    '''This function gives you a ``mapper`` object from assembled `code`. `code` will basically be
-    our assembled gadgets.
-
-    Note that `call`s will be neutralized in order to not mess-up the symbolic execution (otherwise the instruction just
-    after the `call is considered as the instruction being jumped to).
-    
-    From this ``mapper`` object you can reconstruct the symbolic CPU state after the execution of your gadget.
-
-    The CPU used is x86, but that may be changed really easily, so no biggie.'''
-    p = amoco.system.raw.RawExec(
-        amoco.system.core.DataIO(code), cpu
-    )
-    blocks = list(amoco.lsweep(p).iterblocks())
-    assert(len(blocks) > 0)
-    mp = amoco.cas.mapper.mapper()
-    for block in blocks:
-        # If the last instruction is a call, we need to "neutralize" its effect
-        # in the final mapper, otherwise the mapper thinks the block after that one
-        # is actually 'the inside' of the call, which is not the case with ROP gadgets
-        if block.instr[-1].mnemonic.lower() == 'call':
-            p.cpu.i_RET(None, block.map)
-        mp >>= block.map
-    return mp
-
-def prove_(f):
-    '''Taken from http://rise4fun.com/Z3Py/tutorialcontent/guide#h26'''
-    s = Solver()
-    s.add(Not(f))
-    if s.check() == unsat:
-        return True
-    return False
-
-def get_preserved_gpr_from_mapper(mapper):
-    '''Returns a list with the preserved registers in `mapper`'''
-    # XXX: Is there a way to get that directly from `cpu` without knowing the architecture?
-    gpr = [ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx, cpu.esi, cpu.edi, cpu.ebp, cpu.esp, cpu.eip, cpu.eflags ]
-    return filter(lambda reg: prove_(mapper[reg].to_smtlib() == reg.to_smtlib()), gpr)
-
-def get_preserved_gpr_from_mapper_str(mapper):
-    '''Returns a clean string instead of a list of expressions'''
-    preserved_gprs = get_preserved_gpr_from_mapper(mapper)
-    return ', '.join(r.ref for r in preserved_gprs)
-
-def are_cpu_states_equivalent(target, candidate):
-    '''This function tries to compare a set of constraints & a symbolic CPU state. The idea
-    is simple:
-        * `target` is basically a list of `constraints`
-        * `candidate` is a `mapper` instance
-
-    Every constraints inside target are going to be checked against the mapper `candidate`,
-    if they are all satisfied, it returns True, else False.'''
-    valid = True
-    for constraint in target:
-        reg, exp, op = constraint.src, constraint.constraint, constraint.operator
-        if op in (operator.gt, operator.ge, operator.lt, operator.le):
-            # little trick here
-            #   In [42]: from z3 import *
-            #   In [43]: a, b = BitVecs('a b', 32)
-            #   In [44]: prove(UGT((a + 10), (a+3)))
-            #    counterexample
-            #    [a = 4294967287] :((((
-            #   In [65]: prove(((a+10)-(a+3)) > 0)
-            #    proved - yay!
-            valid = prove_(op(0, exp.to_smtlib() - candidate[reg].to_smtlib()))
-        else:
-            valid = prove_(op(exp.to_smtlib(), candidate[reg].to_smtlib()))
-
-        if valid == False:
-            break
-
-    return valid
-
-def extract_things_from_mapper(mapper, op, *things):
-    '''Extracts whatever you want from a mapper & build a Constraint instance so that you can directly feed
-    those ones in `are_cpu_states_equivalent`.'''
-    return [ Constraint(thing, mapper[thing], op) for thing in things ]
-
-def extract_things_from_mapper_eq(mapper, *things):
-    return extract_things_from_mapper(mapper, operator.eq, *things)
-
-def extract_mems_from_mapper(mapper):
-    '''Extract every ``mem`` state available in a ``mapper``. It is particularly
-    useful if you want to analyze what kind of operation against memory a ``mapper``
-    does'''
-    mem = []
-    for location, content in mapper:
-        if isinstance(location, (amoco.cas.expressions.ptr, amoco.cas.expressions.mem)):
-            mem.append((location, content))
-    return mem
-
-# def extract_write4_what_where_from_mapper(mapper):
-#     '''The idea here is to find in a ``mapper`` if you can write 4 arbitrary bytes at an
-#     arbitrary location. If it is possible, it tells you where you have to stick the ``where`` pointer and
-#     the ``what`` value. We assume you have control over the stack, but we will discard hardcoded location
-#     because you most likely want to write wherever you want.'''
-#     mem = extract_mems_from_mapper(mapper)
-#     for location, content in mem:
-#         where = None
-#         # First we check where the write is happening
-#         if isinstance(location, amoco.cas.expressions.ptr):
-#             if isinstance(location.base
-
-
-
-def disassemble(bytes):
-    p = amoco.system.raw.RawExec(
-        amoco.system.core.DataIO(bytes), cpu
-    )
-    blocks = list(amoco.lsweep(p).iterblocks())
-    s = []
-    for block in blocks:
-        for i in block.instr:
-            s.append(' '.join(i.formatter(i).split()))
-
-    return ' ; '.join(s).lower()
-
-class Gadget(object):
-    def __init__(self, bytes, mapper = None):
-        self.bytes = bytes
-        self._mapper = mapper
-        self.state = 'npickable'
-        if self._mapper is None:
-            self.state = 'pickable'
-            self._mapper = amoco.db.db_mapper(sym_exec_gadget_and_get_mapper(self.bytes))
-
-    @property
-    def mapper(self):
-        if self._mapper is None:
-            self._mapper = sym_exec_gadget_and_get_mapper(self.bytes)
-            if self.state == 'npickable':
-                self.state = 'pickable'
-                self._mapper = amoco.db.db_mapper(self._mapper)
-        return self._mapper
-
-    @property
-    def disassembly(self):
-        disassembly(self.bytes)
-
-    def serialize(self, f):
-        cPickle.dump(self.bytes, f)
-        cPickle.dump(self.mapper, f)
-
-    @staticmethod
-    def unserialize(f):
-        bytes = cPickle.load(f)
-        mapper = cPickle.load(f).build()
-        return Gadget(bytes, mapper)
 
 class HandleLineFromFile(object):
     def __init__(self, g_dict, maxtuples):
@@ -394,16 +228,14 @@ def are_cpu_states_equivalent_or(target, candidate):
 #     print primitive_write4(gadgets, 0xdeadbeef, 0xbaadc0de)
 
 def is_clean_gadget(gadget):
-    gpr = [ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx, cpu.esi, cpu.edi ]
     is_clean = True
     # we want a clean gadget that don't try to write.read everywhere
     is_clean &= len(filter(lambda x:x._is_mem, gadget.mapper.outputs())) == 0
     # same for reads
-    is_clean &= len(filter(lambda x:x._is_mem, [gadget.mapper[reg] for reg in gpr])) == 0
+    is_clean &= len(filter(lambda x:x._is_mem, [gadget.mapper[reg] for reg in symexec.GPRs])) == 0
     return is_clean
 
 def is_gadget_PN1_valid(gadget):
-    gpr = [ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx, cpu.esi, cpu.edi ]
     Result = namedtuple('PN1Result', ('src', 'dst', 'preserved_registers', 'bytes'))
     # XXX: In [116]: print sym_exec_gadget_and_get_mapper('\x3a\x17')
     # eip <- { | [0:32]->(eip+0x2) | }
@@ -421,8 +253,8 @@ def is_gadget_PN1_valid(gadget):
 
     # we want a clean gadget that don't try to write everywhere
     if is_clean_gadget(gadget):
-        for src in gpr:
-            for dst in gpr:
+        for src in symexec.GPRs:
+            for dst in symexec.GPRs:
                 if src == dst:
                     continue
 
@@ -511,11 +343,6 @@ def main():
     parser.add_argument('--file', type = str, help = 'The files with every available gadgets you have')
     parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
     
-    amoco.set_quiet()
-    # Disable aliasing -- mov [eax], ebx ; mov [ebx], 10; jmp [eax]
-    # Here we assume that eax & ebx are different. Without assume_no_aliasing, we would have eip <- M32$2(eax)
-    amoco.cas.mapper.mapper.assume_no_aliasing = True
-
     args = parser.parse_args()
     if args.run_tests:
         testing()

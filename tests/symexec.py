@@ -20,7 +20,8 @@
 #
 
 import sys
-import rp2s
+import gadget
+import utils
 import unittest
 import amoco
 import amoco.arch.x86.cpu_x86 as cpu
@@ -38,13 +39,12 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
     def test_arith_assignation(self):
         '''This one focuses arithmetic assembly operations & what I call "assignations" (moving registers from one to another, etc.).\n'''
         disass_target, gadget_target = 'mov eax, ebx ; ret 4', '\x89\xd8\xc2\x04\x00'
-        
         # We generate the mapper for the final state we want to reach
         # In that state we may be interested in only one or two registers ; whatever, you extract what you want from it
-        target_mapper = rp2s.sym_exec_gadget_and_get_mapper(gadget_target)
+        target_gadget = gadget.Gadget(gadget_target)
         
         # We pick the registers (& their amoco expressions) we are interested in inside the final ``mapper``
-        cpu_state_end_target_eax = rp2s.extract_things_from_mapper_eq(target_mapper, cpu.eax)
+        cpu_state_end_target_eax = target_gadget[cpu.eax]
 
         # Thanks Dad`! -- http://aurelien.wail.ly/nrop/demos/
         candidates = {
@@ -56,41 +56,42 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         }
 
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
-            self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_eax, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+            cpu_state_end_candidate = gadget.Gadget(code)
+            self.assertEqual(
+                cpu_state_end_target_eax,
+                cpu_state_end_candidate
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
-        cpu_state_end_target_eax_esp = rp2s.extract_things_from_mapper_eq(target_mapper, cpu.eax, cpu.esp)
+        cpu_state_end_target_eax_esp = target_gadget[cpu.eax, cpu.esp]
 
         # Conservation of ESP (or not in this case)
-        gadget = 'xchg ebx, eax ; pop edi ; pop edi ; ret'
-        gadget_code = candidates[gadget]
+        disass_gadget = 'xchg ebx, eax ; pop edi ; pop edi ; ret'
+        gadget_code = candidates[disass_gadget]
         self.assertFalse(
-            rp2s.are_cpu_states_equivalent(
+            utils.are_cpu_states_equivalent(
                 cpu_state_end_target_eax_esp,
-                rp2s.sym_exec_gadget_and_get_mapper(gadget_code)
-            ),
-            '"%s" was expected to be different than "%s"' % (disass_target, gadget)
+                gadget.Gadget(gadget_code)
+            )
         )
 
-        print ' > "%s" != "%s"' % (disass_target, gadget)
+        print ' > "%s" != "%s"' % (disass_target, disass_gadget)
         csts_eax, csts_esp = cpu_state_end_target_eax_esp
         print '  > %r VS %r' % (
             csts_esp.constraint.to_smtlib(),
-            rp2s.sym_exec_gadget_and_get_mapper(gadget_code)[cpu.esp].to_smtlib()
+            gadget.Gadget(gadget_code)._mapper[cpu.esp].to_smtlib()
         )
 
         disass_target, gadget_target = 'mov eax, 0x1234 ; ret', '\xb8\x34\x12\x00\x00\xc3'
-        disass, gadget = 'mov edx, 0xffffedcc ; xor eax, eax ; sub eax, edx ; ret', '\xba\xcc\xed\xff\xff\x31\xc0\x29\xd0\xc3'
-        target_mapper = rp2s.sym_exec_gadget_and_get_mapper(gadget_target)
+        disass, gadget_code = 'mov edx, 0xffffedcc ; xor eax, eax ; sub eax, edx ; ret', '\xba\xcc\xed\xff\xff\x31\xc0\x29\xd0\xc3'
+        target_gadget = gadget.Gadget(gadget_target)
 
-        cpu_state_end_target_eax = rp2s.extract_things_from_mapper_eq(target_mapper, mem(cpu.eax))
+        cpu_state_end_target_eax = target_gadget[cpu.eax]
         self.assertTrue(
-            rp2s.are_cpu_states_equivalent(cpu_state_end_target_eax, rp2s.sym_exec_gadget_and_get_mapper(gadget)),
-            '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+            utils.are_cpu_states_equivalent(
+                [ cpu_state_end_target_eax ],
+                gadget.Gadget(gadget_code)
+            )
         )
         print ' > "%s" == "%s"' % (disass_target, disass)
 
@@ -98,8 +99,8 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         '''This one is going to focus more on memory read/write operations
         '''
         disass_target, gadget_target = 'mov eax, 0x1234 ; ret', '\xb8\x34\x12\x00\x00\xc3'
-        target_mapper = rp2s.sym_exec_gadget_and_get_mapper(gadget_target)
-        cpu_state_end_target_eax = rp2s.extract_things_from_mapper_eq(target_mapper, cpu.eax)
+        target_gadget = gadget.Gadget(gadget_target)._mapper
+        cpu_state_end_target_eax = utils.extract_things_from_mapper_eq(target_gadget, cpu.eax)
 
         candidates = {
             'push 0xffffedcc ; pop edx ; xor eax, eax ; sub eax, edx ; ret' : '\x68\xcc\xed\xff\xff\x5a\x31\xc0\x29\xd0\xc3',
@@ -107,68 +108,78 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         }
 
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
+            cpu_state_end_candidate = gadget.Gadget(code)
             self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_eax, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+                utils.are_cpu_states_equivalent(
+                    cpu_state_end_target_eax,
+                    cpu_state_end_candidate
+                )
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
-        cpu_state_end_target_esp = [ rp2s.Constraint(cpu.esp, mem(cpu.ebp, 32) + 8) ]
+        cpu_state_end_target_esp = [ gadget.Constraint(cpu.esp, mem(cpu.ebp, 32) + 8) ]
         candidates = {
             # https://twitter.com/NicoEconomou/status/527555631017107456 -- thanks @NicoEconomou! 
             'leave ; setl cl ; mov eax, ecx ; pop edi ; pop ebx ; pop esi ; leave ; ret' : '\xc9\x0f\x9c\xc1\x89\xc8\x5f\x5b\x5e\xc9\xc3',
         }
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
+            cpu_state_end_candidate = gadget.Gadget(code)
             self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_esp, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+                utils.are_cpu_states_equivalent(
+                    cpu_state_end_target_esp,
+                    cpu_state_end_candidate
+                )
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
         disass_target, gadget_target = 'add [eax], 4 ; ret', '\x83\x00\x04\xc3'
-        target_mapper = rp2s.sym_exec_gadget_and_get_mapper(gadget_target)
-        cpu_state_end_target_mem_eax = rp2s.extract_things_from_mapper_eq(target_mapper, mem(cpu.eax, 32))
+        target_gadget = gadget.Gadget(gadget_target)._mapper
+        cpu_state_end_target_mem_eax = utils.extract_things_from_mapper_eq(target_gadget, mem(cpu.eax, 32))
         candidates = {
             'inc [eax] ; mov ebx, eax ; push ebx ; mov esi, [esp] ; add [esi], 3 ; mov ebx, [esi] ; mov [eax], ebx ; ret' : '\xff\x00\x89\xc3\x53\x8b\x34\x24\x83\x06\x03\x8b\x1e\x89\x18\xc3',
             'inc [eax] ; push eax ; mov esi, [esp] ; add [esi], 3 ; mov ebx, [esi] ; mov [eax], ebx ; ret' : '\xff\x00\x50\x8b\x34\x24\x83\x06\x03\x8b\x1e\x89\x18\xc3',
         }
 
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
+            cpu_state_end_candidate = gadget.Gadget(code)
             self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_mem_eax, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+                utils.are_cpu_states_equivalent(
+                    cpu_state_end_target_mem_eax,
+                    cpu_state_end_candidate
+                )
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
         disass_target = 'EIP = [ESP + 0x24]'
-        cpu_state_end_target_eip = [ rp2s.Constraint(cpu.eip, mem(cpu.esp + 0x24, 32)) ]
+        cpu_state_end_target_eip = [ gadget.Constraint(cpu.eip, mem(cpu.esp + 0x24, 32)) ]
         candidates = {
             'add esp, 0x24 ; ret' : '\x83\xc4\x24\xc3'
         }
 
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
+            cpu_state_end_candidate = gadget.Gadget(code)
             self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_eip, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+                utils.are_cpu_states_equivalent(
+                    cpu_state_end_target_eip,
+                    cpu_state_end_candidate
+                )
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
         disass_target = 'ESP = [ESP + 0x24]'
-        cpu_state_end_target_esp = [ rp2s.Constraint(cpu.esp, mem(cpu.esp + 0x24, 32)) ]
+        cpu_state_end_target_esp = [ gadget.Constraint(cpu.esp, mem(cpu.esp + 0x24, 32)) ]
         candidates = {
             'add esp, 0x24 ; mov esp, [esp]' : '\x83\xc4\x24\x8b\x24\x24'
         }
 
         for disass, code in candidates.iteritems():
-            cpu_state_end_candidate = rp2s.sym_exec_gadget_and_get_mapper(code)
+            cpu_state_end_candidate = gadget.Gadget(code)
             print '  >', cpu_state_end_candidate[cpu.esp], 'VS', cpu_state_end_target_esp[0].constraint
             self.assertTrue(
-                rp2s.are_cpu_states_equivalent(cpu_state_end_target_esp, cpu_state_end_candidate),
-                '"%s" was expected to be equal to "%s"' % (disass_target, disass)
+                utils.are_cpu_states_equivalent(
+                    cpu_state_end_target_esp,
+                    cpu_state_end_candidate
+                )
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
@@ -185,7 +196,7 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         # }
 
         # # simple PN1
-        # r = is_gadget_PN1_valid(rp2s.sym_exec_gadget_and_get_mapper(assembly_store['mov ecx, eax ; pop eax; rdtsc ; ret']))
+        # r = is_gadget_PN1_valid(Gadget(assembly_store['mov ecx, eax ; pop eax; rdtsc ; ret']))
         # assert len(r) == 1
         # r = r[0]
         # assert r.src == 'eax' and r.dst == 'ecx' and [cpu.ecx]
