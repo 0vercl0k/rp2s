@@ -49,7 +49,7 @@ class Constraint(object):
 
         raise NotImplemented('Constraint.__eq__')
 
-#XXX: ConstraintList
+#XXX: ConstraintList?? rly?
 
 class Gadget(object):
     '''
@@ -60,7 +60,7 @@ class Gadget(object):
     Actually, we make more strong assumptions about a `Gadget` in order to have more accurate results:
         
         * In order to be able to chain `Gadget`s we need them to be chainable -- basically we need that EIP = [ESP + X] at
-        the end of its execution with 0 <= X < cst.
+        the end of its execution with 0 <= X < cst. You can query the `_is_chainable` variable to have this info.
 
     Also, a `Gadget` can have a set of `Primitive` associated; it describes which useful things a `Gadget` can do, in a more higher
     view than assembly.
@@ -73,8 +73,18 @@ class Gadget(object):
         self._bytes = bytes
         self._disassembly = utils.disassemble(self._bytes)
         self._mapper = symexec.sym_exec_gadget_and_get_mapper(self._bytes)
+        self.preserved_registers = utils.get_preserved_gpr_from_mapper(self._mapper)
         self._primitives = []
-        self._return_stackoffset = None
+
+        self._is_chainable, self._stackoffset_for_chaining = self._is_chainable_gadget()
+
+    def _is_chainable_gadget(self):
+        '''Checking if EIP = [ESP + X]'''
+        eip = self._mapper[cpu.eip]
+        if eip._is_mem and eip.a.base._is_reg and eip.a.base.ref == 'esp' and 0 <= eip.a.disp < 0x100:
+            return True, eip.a.disp
+
+        return False, None
 
     def to_smtlib(self):
         return self._mapper.to_smtlib()
@@ -84,6 +94,16 @@ class Gadget(object):
             return [Constraint(item, self._mapper[item]) for item in items]
 
         return Constraint(items, self._mapper[items])
+
+    def __str__(self):
+        s = ''
+        s += 'Gadget: ', self._disassembly, repr(self._bytes)[ : 40]
+        s += '  -> Preserved registers:', ','.join(str, self.preserved_registers)
+        s += '  -> Chainable from stack?', self._chainable_from_stack
+        if self._chainable_from_stack:
+            s += '    -> Stack-offset to chain:', self._stackoffset_for_chaining
+
+        return s
 
 def main(argc, argv):
     return 1
