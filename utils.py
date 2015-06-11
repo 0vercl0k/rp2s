@@ -67,13 +67,16 @@ def get_preserved_gpr_from_mapper_str(mapper):
 def are_cpu_states_equivalent(target, candidate):
     '''This function tries to compare a set of constraints & a symbolic CPU state. The idea
     is simple:
-        * `target` is basically a list of `constraints`
-        * `candidate` is a `mapper` instance
+        * `target` is basically a list of `constraints`, or a `Constraint`
+        * `candidate` is a `mapper` instance, or a `Gadget` instance
 
     Every constraints inside target are going to be checked against the mapper `candidate`,
     if they are all satisfied, it returns True, else False.'''
     if isinstance(candidate, gadget.Gadget):
         candidate = candidate._mapper
+
+    if isinstance(target, gadget.Constraint):
+        target = [ target ]
 
     valid = True
     for constraint in target:

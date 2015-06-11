@@ -89,7 +89,7 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         cpu_state_end_target_eax = target_gadget[cpu.eax]
         self.assertTrue(
             utils.are_cpu_states_equivalent(
-                [ cpu_state_end_target_eax ],
+                cpu_state_end_target_eax,
                 gadget.Gadget(gadget_code)
             )
         )
@@ -117,7 +117,7 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
             )
             print ' > "%s" == "%s"' % (disass_target, disass)
 
-        cpu_state_end_target_esp = [ gadget.Constraint(cpu.esp, mem(cpu.ebp, 32) + 8) ]
+        cpu_state_end_target_esp = gadget.Constraint(cpu.esp, mem(cpu.ebp, 32) + 8)
         candidates = {
             # https://twitter.com/NicoEconomou/status/527555631017107456 -- thanks @NicoEconomou! 
             'leave ; setl cl ; mov eax, ecx ; pop edi ; pop ebx ; pop esi ; leave ; ret' : '\xc9\x0f\x9c\xc1\x89\xc8\x5f\x5b\x5e\xc9\xc3',
@@ -151,7 +151,7 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
             print ' > "%s" == "%s"' % (disass_target, disass)
 
         disass_target = 'EIP = [ESP + 0x24]'
-        cpu_state_end_target_eip = [ gadget.Constraint(cpu.eip, mem(cpu.esp + 0x24, 32)) ]
+        cpu_state_end_target_eip = gadget.Constraint(cpu.eip, mem(cpu.esp + 0x24, 32))
         candidates = {
             'add esp, 0x24 ; ret' : '\x83\xc4\x24\xc3'
         }
@@ -167,14 +167,14 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
             print ' > "%s" == "%s"' % (disass_target, disass)
 
         disass_target = 'ESP = [ESP + 0x24]'
-        cpu_state_end_target_esp = [ gadget.Constraint(cpu.esp, mem(cpu.esp + 0x24, 32)) ]
+        cpu_state_end_target_esp = gadget.Constraint(cpu.esp, mem(cpu.esp + 0x24, 32))
         candidates = {
             'add esp, 0x24 ; mov esp, [esp]' : '\x83\xc4\x24\x8b\x24\x24'
         }
 
         for disass, code in candidates.iteritems():
             cpu_state_end_candidate = gadget.Gadget(code)
-            print '  >', cpu_state_end_candidate[cpu.esp], 'VS', cpu_state_end_target_esp[0].constraint
+            print '  >', cpu_state_end_candidate[cpu.esp], 'VS', cpu_state_end_target_esp.constraint
             self.assertTrue(
                 utils.are_cpu_states_equivalent(
                     cpu_state_end_target_esp,
