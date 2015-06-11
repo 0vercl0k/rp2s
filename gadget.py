@@ -105,6 +105,8 @@ class Gadget(object):
             s.append('    -> Stack-offset to chain: %s' % self._stackoffset_for_chaining)
         return '\n'.join(s)
 
+    # XXX: I want Gadget instances being able to be stored in a set; do what is necessary to make it happen. hash?eq?
+
 def main(argc, argv):
     return 1
 

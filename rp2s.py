@@ -46,16 +46,19 @@
 
 import sys
 import operator
-import symexec
-import parser
-import utils
 import argparse
 import multiprocessing
 import time
 import traceback
 import cPickle
 
+import symexec
+import dbparser
+import utils
+
 from collections import namedtuple
+# XXX: no amoco here
+import amoco.arch.x86.cpu_x86 as cpu
 
 class HandleLineFromFile(object):
     def __init__(self, g_dict, maxtuples):
@@ -303,12 +306,13 @@ def find_natural_primitive_gadgets(gadgets):
     display_dict_primitives('PN2', PN2)
 
 def main():
-    parser = argparse.ArgumentParser(description = 'XXX: not sure what it is going to do exactly so waiting for that.')
-    parser.add_argument('--run-tests', action = 'store_true', help = 'Run the unit tests')
-    parser.add_argument('--file', type = str, help = 'The files with every available gadgets you have')
-    # parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
-    parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser(description = 'XXX: not sure what it is going to do exactly so waiting for that.')
+    arg_parser.add_argument('--run-tests', action = 'store_true', help = 'Run the unit tests')
+    arg_parser.add_argument('--file', type = str, help = 'The files with every available gadgets you have')
+    # arg_parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
+    arg_parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
+    arg_parser.add_argument('--max-gadgets', type = int, default = -1, help = 'The maximum amount of gadgets you want to extract from `file`')
+    args = arg_parser.parse_args()
     
     db_parser = None
 
@@ -324,19 +328,29 @@ def main():
     # if args.nprocesses == 0:
     #     args.nprocesses = multiprocessing.cpu_count()
 
-    if args.file is None:
-        if args.run_tests is None:
-            parser.print_help()
+    if args.file is None and args.run_tests is None:
+        arg_parser.print_help()
         return 0
 
     if args.parser_template.lower().startswith('rp'):
-        db_parser = parser.Rp(args.file)
+        db_parser = dbparser.Rp(args.file)
 
-    if db_parser is None:
-        parser.print_help()
+    if db_parser is None or args.max_gadgets < -1:
+        arg_parser.print_help()
         return 0
 
-    candidates = list(db_parser)
+    if args.max_gadgets == -1:
+        args.max_gadgets = None
+
+    t1 = time.time()
+    candidates = list()
+    for gadget in db_parser:
+        candidates.append(gadget)
+        if (len(candidates) % 2000) == 0 and len(candidates) != 0:
+            print '>> Analyzed %d gadgets so far...' % len(candidates)
+        if args.max_gadgets is not None and min(len(candidates), args.max_gadgets) == args.max_gadgets:
+            break
+    t2 = time.time()
     # db_path = os.path.join(os.path.dirname(args.file), '%s.db' % os.path.basename(args.file))
     # t1 = None
     # candidates = []
