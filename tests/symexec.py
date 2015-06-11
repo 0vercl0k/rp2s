@@ -205,10 +205,6 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
         pass
 
 def main(argc, argv):
-    # Disable aliasing -- mov [eax], ebx ; mov [ebx], 10; jmp [eax]
-    # Here we assume that eax & ebx are different. Without assume_no_aliasing, we would have eip <- M32$2(eax)
-    amoco.cas.mapper.mapper.assume_no_aliasing = True
-
     unittest.main(verbosity = 2)
     return 1
 

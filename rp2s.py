@@ -47,6 +47,8 @@
 import sys
 import operator
 import symexec
+import parser
+import utils
 import argparse
 import multiprocessing
 import time
@@ -194,9 +196,9 @@ class HandleCandidateAnalysis(object):
 def is_clean_gadget(gadget):
     is_clean = True
     # we want a clean gadget that don't try to write.read everywhere
-    is_clean &= len(filter(lambda x:x._is_mem, gadget.mapper.outputs())) == 0
+    is_clean &= len(filter(lambda x:x._is_mem, gadget._mapper.outputs())) == 0
     # same for reads
-    is_clean &= len(filter(lambda x:x._is_mem, [gadget.mapper[reg] for reg in symexec.GPRs])) == 0
+    is_clean &= len(filter(lambda x:x._is_mem, [gadget._mapper[reg] for reg in symexec.GPRs])) == 0
     return is_clean
 
 def is_gadget_PN1_valid(gadget):
@@ -222,30 +224,29 @@ def is_gadget_PN1_valid(gadget):
                 if src == dst:
                     continue
 
-                state = gadget.mapper[dst]
+                state = gadget._mapper[dst]
                 if state._is_reg and state.ref == src.ref:
                     results.append(
-                        Result(bytes = gadget.bytes, src = src, dst = dst, preserved_registers = get_preserved_gpr_from_mapper(gadget.mapper))
+                        Result(bytes = gadget._bytes, src = src, dst = dst, preserved_registers = utils.get_preserved_gpr_from_mapper(gadget._mapper))
                     )
 
     return results
 
 def is_gadget_PN2_valid(gadget):
-    gpr = [ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx, cpu.esi, cpu.edi ]
     Result = namedtuple('PN2Result', ('reg', 'stackoffset', 'bytes', 'preserved_registers', 'ret_stackoffset'))
     results = []
     if is_clean_gadget(gadget):
-        for src in gadget.mapper.outputs():
+        for src in gadget._mapper.outputs():
             # src must be a gpr
             # it have to be a mem one, so that we know it is something like [something]
             # it must have `esp` as base so that we know it is something like [esp something]
             # it must have have a maximum offset of 0x100 let's say
             state = gadget.mapper[src]
-            if src in gpr and state._is_mem and state.a.base._is_reg and state.a.base.ref == 'esp' and 0 <= state.a.disp < 0x100:
+            if src in symexec.GPRs and state._is_mem and state.a.base._is_reg and state.a.base.ref == 'esp' and 0 <= state.a.disp < 0x100:
                 # XXX: Remove this when rdtsc serialization bug gone
                 try:
                     results.append(
-                        Result(bytes = gadget.bytes, reg = src, stackoffset = state.a.disp, preserved_registers = get_preserved_gpr_from_mapper(gadget.mapper))
+                        Result(bytes = gadget._bytes, reg = src, stackoffset = state.a.disp, preserved_registers = utils.get_preserved_gpr_from_mapper(gadget._mapper))
                     )
                 except:
                     pass
@@ -282,7 +283,7 @@ def find_natural_primitive_gadgets(gadgets):
     PN2 = {}
     for gadget in gadgets:
         # XXX: Also filter gadgets where we won't be able to control the flow after execution (we want at the end that EIP = [ESP+X] )
-        eip_end = gadget.mapper[cpu.eip]
+        eip_end = gadget._mapper[cpu.eip]
         if eip_end._is_mem == False or eip_end.a.base is not cpu.esp or (0 >= eip_end.a.disp >= 0x100):
             continue
 
@@ -302,47 +303,64 @@ def find_natural_primitive_gadgets(gadgets):
     display_dict_primitives('PN2', PN2)
 
 def main():
-    parser = argparse.ArgumentParser(description = 'Find a suitable ROP gadget via custom constraints.')
+    parser = argparse.ArgumentParser(description = 'XXX: not sure what it is going to do exactly so waiting for that.')
     parser.add_argument('--run-tests', action = 'store_true', help = 'Run the unit tests')
     parser.add_argument('--file', type = str, help = 'The files with every available gadgets you have')
-    parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
-    
+    # parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
+    parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
     args = parser.parse_args()
-    if args.run_tests:
-        testing()
+    
+    db_parser = None
 
-    if args.nprocesses == 0:
-        args.nprocesses = multiprocessing.cpu_count()
+    if args.run_tests:
+        # https://stackoverflow.com/questions/1732438/how-to-run-all-python-unit-tests-in-a-directory
+        suite = unittest.TestSuite()
+        for all_test_suite in unittest.defaultTestLoader.discover('tests', pattern = '*.py'):
+            for test_suite in all_test_suite:
+                suite.addTests(test_suite)
+
+        unittest.main(verbosity = 2)
+
+    # if args.nprocesses == 0:
+    #     args.nprocesses = multiprocessing.cpu_count()
 
     if args.file is None:
         if args.run_tests is None:
             parser.print_help()
         return 0
 
-    db_path = os.path.join(os.path.dirname(args.file), '%s.db' % os.path.basename(args.file))
-    t1 = None
-    candidates = []
-    if os.path.isfile(db_path) == False:
-        print '> Building the list of gadgets since you do not have an existing database (may take time)..'
-        t1 = time.time()
-        m = multiprocessing.Manager()
-        candidates = dict(build_candidates(m, args.file, args.nprocesses, maxtuples = 0))
-        m.shutdown()
-        t2 = time.time()
-        print '> Serializing the candidates into %s' % db_path
-        with open(db_path, 'wb') as f:
-            for candidate in candidates.itervalues():
-                candidate.serialize(f)
-    else:
-        print '> Loading the candidates from the db..'
-        t1 = time.time()
-        with open(db_path, 'rb') as f:
-            while len(candidates) < 100000:
-                try:
-                    candidates.append(Gadget.unserialize(f))
-                except EOFError:
-                    break
-        t2 = time.time()
+    if args.parser_template.lower().startswith('rp'):
+        db_parser = parser.Rp(args.file)
+
+    if db_parser is None:
+        parser.print_help()
+        return 0
+
+    candidates = list(db_parser)
+    # db_path = os.path.join(os.path.dirname(args.file), '%s.db' % os.path.basename(args.file))
+    # t1 = None
+    # candidates = []
+    # if os.path.isfile(db_path) == False:
+    #     print '> Building the list of gadgets since you do not have an existing database (may take time)..'
+    #     t1 = time.time()
+    #     m = multiprocessing.Manager()
+    #     candidates = dict(build_candidates(m, args.file, args.nprocesses, maxtuples = 0))
+    #     m.shutdown()
+    #     t2 = time.time()
+    #     print '> Serializing the candidates into %s' % db_path
+    #     with open(db_path, 'wb') as f:
+    #         for candidate in candidates.itervalues():
+    #             candidate.serialize(f)
+    # else:
+    #     print '> Loading the candidates from the db..'
+    #     t1 = time.time()
+    #     with open(db_path, 'rb') as f:
+    #         while len(candidates) < 100000:
+    #             try:
+    #                 candidates.append(Gadget.unserialize(f))
+    #             except EOFError:
+    #                 break
+    #     t2 = time.time()
 
     print '> Loaded %d unique candidates in %d s' % (len(candidates), t2 - t1)
     find_natural_primitive_gadgets(candidates)
