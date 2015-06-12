@@ -61,18 +61,6 @@ def sym_exec_gadget_and_get_mapper(code, address_code = 0xdeadbeef):
     return mp
 
 def sym_exec_gadget_and_get_mappers_incremental(code, address_code = 0xdeadbeef):
-    '''This function gives you a ``mapper`` object from assembled `code`. `code` will basically be
-    our assembled gadgets.
-
-    Note that `call`s will be neutralized in order to not mess-up the symbolic execution (otherwise the instruction just
-    after the `call is considered as the instruction being jumped to).
-    
-    From this ``mapper`` object you can reconstruct the symbolic CPU state after the execution of your gadget.
-
-    The CPU used is x86, but that may be changed really easily, so no biggie.'''
-    p = amoco.system.raw.RawExec(
-        amoco.system.core.DataIO(code), cpu
-    )
     instrs = []
     bytes = code
     loc = cpu.cst(address_code, 32)
