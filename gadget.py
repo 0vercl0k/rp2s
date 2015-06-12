@@ -79,6 +79,7 @@ class Gadget(object):
         self._primitives = []
 
         self._is_chainable, self._stackoffset_for_chaining = self._is_chainable_gadget()
+        self._is_stackpivot, self._stackpivot_offset = self._is_stackpivot_gadget()
 
     def _is_chainable_gadget(self):
         '''Checking if EIP = [ESP + X]'''
@@ -86,6 +87,33 @@ class Gadget(object):
         if eip._is_mem and eip.a.base._is_reg and eip.a.base.ref == 'esp' and 0 <= eip.a.disp < 0x100:
             return True, eip.a.disp
         return False, None
+
+    def _is_stackpivot_gadget(self):
+        '''We assume the gadget pivots the stack enough when EIP is taken in [ESP + X] with
+        0x100 <= X'''
+        eip = self._mapper[cpu.eip]
+        if eip._is_mem and eip.a.base._is_reg and eip.a.base.ref == 'esp' and 0x100 <= eip.a.disp:
+            return True, eip.a.disp
+        return False, None
+
+    def _is_stricly_clean(self):
+        '''A clean gadget is a gadget that won't try to read/write to memory we can't control;
+        I assume the memory controllable is [ESP + X] basically.
+
+        The idea behind this function is to provide a reliable way to not have gadgets segfaulting in the middle
+        of their executions while doing random memory access. Keeping them clean is another set of hard constraints for sure,
+        but it should improve the accuracy of the information we give back to the user.'''
+        # So, to do that properly we actually need both the symbolic state after every instructions & the one after the entire block
+        # If we focus only the state after the block, we could have 'mov ebx, eax ; mov eax, [0xdeadbeef] ; mov eax, ebx' & we wouldn't
+        # see the memory read happening just by looking at the state at the end of the block.
+        
+        # Thus the idea is to kind of mix both idea; let's focus on this example:
+        #   'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx] ; mov eax, ebx'
+        # If we have the mapper for every instruction, we are fine, we'll see the [ecx] dereference -- but now we have another problem;
+        # How do I know I ecx is derived from ESP (& thus assumed controlable?)?
+        # Soo, to get around this we won't generate a mapper for every instruction, but we will generate a mapper for 'mov ebx, eax', 'mov ebx, eax ; lea ecx, [esp + 10]',
+        # 'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx]' & so on. This is exactly what symexec.sym_exec_gadget_and_get_mappers_incremental will do.
+        mappers = symexec.sym_exec_gadget_and_get_mappers_incremental(self._bytes)
 
     def to_smtlib(self):
         return self._mapper.to_smtlib()
@@ -103,6 +131,9 @@ class Gadget(object):
         s.append('  -> Chainable from stack? %s' % self._is_chainable)
         if self._is_chainable:
             s.append('    -> Stack-offset to chain: %s' % self._stackoffset_for_chaining)
+        s.append('  -> Enough to pivot the stack? %s' % self._is_stackpivot)
+        if self._is_stackpivot:
+            s.append('    -> Stack-offset to chain: %s' % self._stackpivot_offset)
         return '\n'.join(s)
 
     # XXX: I want Gadget instances being able to be stored in a set; do what is necessary to make it happen. hash?eq?
@@ -112,3 +143,11 @@ def main(argc, argv):
 
 if __name__ == '__main__':
     sys.exit(main(len(sys.argv), sys.argv))
+
+# def is_clean_gadget(gadget):
+#     is_clean = True
+#     # we want a clean gadget that don't try to write.read everywhere
+#     is_clean &= len(filter(lambda x:x._is_mem, gadget._mapper.outputs())) == 0
+#     # same for reads
+#     is_clean &= len(filter(lambda x:x._is_mem, [gadget._mapper[reg] for reg in symexec.GPRs])) == 0
+#     return is_clean

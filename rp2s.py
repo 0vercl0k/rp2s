@@ -196,14 +196,6 @@ class HandleCandidateAnalysis(object):
 #     gadgets = dict(gadgets)
 #     print primitive_write4(gadgets, 0xdeadbeef, 0xbaadc0de)
 
-def is_clean_gadget(gadget):
-    is_clean = True
-    # we want a clean gadget that don't try to write.read everywhere
-    is_clean &= len(filter(lambda x:x._is_mem, gadget._mapper.outputs())) == 0
-    # same for reads
-    is_clean &= len(filter(lambda x:x._is_mem, [gadget._mapper[reg] for reg in symexec.GPRs])) == 0
-    return is_clean
-
 def is_gadget_PN1_valid(gadget):
     Result = namedtuple('PN1Result', ('src', 'dst', 'preserved_registers', 'bytes'))
     # XXX: In [116]: print sym_exec_gadget_and_get_mapper('\x3a\x17')
