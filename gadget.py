@@ -115,7 +115,6 @@ class Gadget(object):
         # How do I know if ECX is derived from ESP (& thus assumed controllable?)?
         # Soo, to get around this we won't generate a mapper for every instruction, but we will generate a mapper for 'mov ebx, eax', 'mov ebx, eax ; lea ecx, [esp + 10]',
         # 'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx]' & so on. This is exactly what symexec.sym_exec_gadget_and_get_mappers_incremental will do.
-        stricly_clean = True
         for mapper in symexec.sym_exec_gadget_and_get_mappers_incremental(self._bytes):
             # In [6]: print m
             # ebx <- { | [0:32]->eax | }
