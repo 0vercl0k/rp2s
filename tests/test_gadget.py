@@ -30,15 +30,36 @@ class TestGadget(unittest.TestCase):
         self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)
         print '>', gadget_disass, 'is not stricly clean'
 
-        # positive test: obvious esp memory read
+        # positive test: obvious esp memory write
         gadget_code, gadget_disass = '\x54\xc3', 'push esp ; ret'
         self.assertTrue(gadget.Gadget(gadget_code)._is_strictly_clean)
         print '>', gadget_disass, 'is stricly clean'
 
         # obvious memory write
-        # ovious memory read write
+        gadget_code, gadget_disass = '\xa3\xef\xbe\xad\xde\xc3', 'mov [0xdeadbeef], eax ; ret'
+        self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)
+        print '>', gadget_disass, 'is not stricly clean'
+        gadget_code, gadget_disass = '\xa3\xef\xbe\xad\xde\xc3', 'mov eax, 0x31337 ; mov [eax], ebx ; ret'
+        self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)
+        print '>', gadget_disass, 'is not stricly clean'
+
+
+        gadget_code, gadget_disass = '\x8d\x44\x24\x0a\x89\xc3\x89\x0b\xc3', 'lea eax, [esp + 10] ; mov ebx, eax ; mov [ebx], ecx ; ret'
+        self.assertTrue(gadget.Gadget(gadget_code)._is_strictly_clean)
+        print '>', gadget_disass, 'is strictly clean'
+        gadget_code, gadget_disass = '\x8d\x44\x24\x0a\x89\xc3\x8b\x0b\x8b\x09\xc3', 'lea eax, [esp + 10] ; mov ebx, eax ; mov ecx, [ebx] ; mov ecx, [ecx] ; ret'
+        self.assertTrue(gadget.Gadget(gadget_code)._is_strictly_clean)
+        print '>', gadget_disass, 'is strictly clean'
+
+
+        # obvious memory read write
+
         # obvious memory write read
         # 'hidden' memory read
+        gadget_code, gadget_disass = '\x8b\x18\xbb\x01\x00\x00\x00\xc3', 'mov ebx, [eax] ; mov ebx, 1 ; ret'
+        self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)
+        print '>', gadget_disass, 'is not strictly clean'
+
         # 'hidden' memory read write
 
         # tests with strict sequences

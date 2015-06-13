@@ -191,11 +191,3 @@ def main(argc, argv):
 
 if __name__ == '__main__':
     sys.exit(main(len(sys.argv), sys.argv))
-
-# def is_clean_gadget(gadget):
-#     is_clean = True
-#     # we want a clean gadget that don't try to write.read everywhere
-#     is_clean &= len(filter(lambda x:x._is_mem, gadget._mapper.outputs())) == 0
-#     # same for reads
-#     is_clean &= len(filter(lambda x:x._is_mem, [gadget._mapper[reg] for reg in symexec.GPRs])) == 0
-#     return is_clean
