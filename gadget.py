@@ -25,6 +25,7 @@ import utils
 import operator
 # XXX: this is ugly -- ideally we shouldn't need to import any amoco stuff in here
 import amoco.arch.x86.cpu_x86 as cpu
+from amoco.cas.expressions import *
 
 class Constraint(object):
     '''A constraint is basically a `src` that can be a register or a memory location,
@@ -80,6 +81,7 @@ class Gadget(object):
 
         self._is_chainable, self._stackoffset_for_chaining = self._is_chainable_gadget()
         self._is_stackpivot, self._stackpivot_offset = self._is_stackpivot_gadget()
+        self._is_stricly_clean = self._is_stricly_clean()
 
     def _is_chainable_gadget(self):
         '''Checking if EIP = [ESP + X]'''
@@ -113,7 +115,54 @@ class Gadget(object):
         # How do I know I ecx is derived from ESP (& thus assumed controlable?)?
         # Soo, to get around this we won't generate a mapper for every instruction, but we will generate a mapper for 'mov ebx, eax', 'mov ebx, eax ; lea ecx, [esp + 10]',
         # 'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx]' & so on. This is exactly what symexec.sym_exec_gadget_and_get_mappers_incremental will do.
-        mappers = symexec.sym_exec_gadget_and_get_mappers_incremental(self._bytes)
+        stricly_clean = True
+        for mapper in symexec.sym_exec_gadget_and_get_mappers_incremental(self._bytes):
+            # In [6]: print m
+            # ebx <- { | [0:32]->eax | }
+            # ecx <- { | [0:32]->(esp+10) | }
+            # eip <- { | [0:32]->(eip+0xa) | }
+            # eax <- { | [0:32]->eax | }
+            # In [7]: print m.outputs() <- this is the left part of the previous output (memory write)
+            # [<amoco.cas.expressions.reg object at 0x03116AB0>, <amoco.cas.expressions.reg object at 0x03116AE0>,
+            # <amoco.cas.expressions.reg object at 0x03116C00>, <amoco.cas.expressions.reg object at 0x03116A80>]
+            # In [8]: print m.inputs() <- this is the right part (memory read)
+            # [<amoco.cas.expressions.reg object at 0x03116A80>, <amoco.cas.expressions.ptr object at 0x0337D3F0>, <amoco.cas.expressi
+            # ons.reg object at 0x03116C00>, <amoco.cas.expressions.reg object at 0x03116A80>]
+            symbols = mapper.outputs() + mapper.inputs()
+            
+            # first step is to keep only memory operations
+            memory_operations = filter(
+                lambda x:x._is_mem,
+                symbols
+            )
+
+            if len(memory_operations) == 0:
+                # we are fine, we can continue
+                continue
+
+            # second step is to identify the controlable memory locations from the one you don't
+            # we don't handle conditional jumps in gadget that could make a memory location conditional as:
+            #    mov eax, [esp] ; test eax, eax ; jz foo; mov eax, [esp + 4] ; foo: mov eax, [0xdeadbeef]
+            # According to the value pointed by ESP, we can either read again from a derived location from ESP, or from 0xdeadbeef
+            # In [24]: m = symexec.sym_exec_gadget_and_get_mapper('\x8b\x04\x24\x85\xc0\x74\x04\x8b\x44\x24\x04')
+            # In [25]: print m
+            # eip <- { | [0:32]->(((M32(esp)==0x0) ? (eip+0xb) : (eip+0x7))+0x4) | }
+            # XXX: May investigate why that is -> eax <- { | [0:32]->M32(esp+4) | }
+            for memory_operation in memory_operations:
+                inner_expr = memory_operation.a
+                while True:
+                    if isinstance(inner_expr, ptr):
+                        # We need to go deeper to do the check
+                        inner_expr = inner_expr.base
+                    elif isinstance(inner_expr, mem):
+                        inner_expr = inner_expr.a
+                    else:
+                        if not (isinstance(inner_expr, reg) and inner_expr.ref == 'esp'):
+                            return False
+                        # We're done!
+                        break
+
+        return True
 
     def to_smtlib(self):
         return self._mapper.to_smtlib()

@@ -71,9 +71,10 @@ def sym_exec_gadget_and_get_mappers_incremental(code, address_code = 0xdeadbeef)
         bytes = bytes[l : ]
         loc += l
 
-    mappers = [amoco.code.block(instrs[0 : i]).map for i in range(1, len(instrs))]
+    for i in range(1, len(instrs)):
+        yield amoco.code.block(instrs[0 : i]).map
     # XXX: We need to do something about the potential calls in the chain as above
-    return mappers
+    raise StopIteration()
 
 def main(argc, argv):
     

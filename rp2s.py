@@ -51,6 +51,7 @@ import multiprocessing
 import time
 import traceback
 import cPickle
+import unittest
 
 import symexec
 import dbparser
@@ -311,17 +312,19 @@ def main():
     if args.run_tests:
         # https://stackoverflow.com/questions/1732438/how-to-run-all-python-unit-tests-in-a-directory
         suite = unittest.TestSuite()
-        for all_test_suite in unittest.defaultTestLoader.discover('tests', pattern = '*.py'):
+        for all_test_suite in unittest.defaultTestLoader.discover('tests'):
             for test_suite in all_test_suite:
                 suite.addTests(test_suite)
 
-        unittest.main(verbosity = 2)
+        # use the basic test runner that outputs to sys.stderr
+        unittest.TextTestRunner().run(suite)
 
     # if args.nprocesses == 0:
     #     args.nprocesses = multiprocessing.cpu_count()
 
-    if args.file is None and args.run_tests is None:
-        arg_parser.print_help()
+    if args.run_tests is None or args.file is None:
+        if args.run_tests is None and args.file is None:
+            arg_parser.print_help()
         return 0
 
     if args.parser_template.lower().startswith('rp'):

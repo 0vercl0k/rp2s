@@ -174,7 +174,7 @@ class TestSymbolicExecutionEngine(unittest.TestCase):
 
         for disass, code in candidates.iteritems():
             cpu_state_end_candidate = gadget.Gadget(code)
-            print '  >', cpu_state_end_candidate[cpu.esp], 'VS', cpu_state_end_target_esp.constraint
+            print '  >', cpu_state_end_candidate[cpu.esp].constraint, 'VS', cpu_state_end_target_esp.constraint
             self.assertTrue(
                 utils.are_cpu_states_equivalent(
                     cpu_state_end_target_esp,
