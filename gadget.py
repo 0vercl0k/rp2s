@@ -112,7 +112,7 @@ class Gadget(object):
         # Thus the idea is to kind of mix both idea; let's focus on this example:
         #   'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx] ; mov eax, ebx'
         # If we have the mapper for every instruction, we are fine, we'll see the [ecx] dereference -- but now we have another problem;
-        # How do I know I ecx is derived from ESP (& thus assumed controlable?)?
+        # How do I know if ECX is derived from ESP (& thus assumed controllable?)?
         # Soo, to get around this we won't generate a mapper for every instruction, but we will generate a mapper for 'mov ebx, eax', 'mov ebx, eax ; lea ecx, [esp + 10]',
         # 'mov ebx, eax ; lea ecx, [esp + 10] ; mov eax, [ecx]' & so on. This is exactly what symexec.sym_exec_gadget_and_get_mappers_incremental will do.
         stricly_clean = True
@@ -140,7 +140,7 @@ class Gadget(object):
                 # we are fine, we can continue
                 continue
 
-            # second step is to identify the controlable memory locations from the one you don't
+            # second step is to identify the controllable memory locations from the one you don't
             # we don't handle conditional jumps in gadget that could make a memory location conditional as:
             #    mov eax, [esp] ; test eax, eax ; jz foo; mov eax, [esp + 4] ; foo: mov eax, [0xdeadbeef]
             # According to the value pointed by ESP, we can either read again from a derived location from ESP, or from 0xdeadbeef
