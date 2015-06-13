@@ -27,12 +27,12 @@ class TestGadget(unittest.TestCase):
     def test_strict_cleaness(self):
         # negative test: obvious memory read
         gadget_code, gadget_disass = '\xa1\xef\xbe\xea\x0d\x50\xc3', 'mov eax, [0xdeabeef] ; push eax ; ret'
-        self.assertFalse(gadget.Gadget(gadget_code)._is_stricly_clean)
+        self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)
         print '>', gadget_disass, 'is not stricly clean'
 
         # positive test: obvious esp memory read
         gadget_code, gadget_disass = '\x54\xc3', 'push esp ; ret'
-        self.assertTrue(gadget.Gadget(gadget_code)._is_stricly_clean)
+        self.assertTrue(gadget.Gadget(gadget_code)._is_strictly_clean)
         print '>', gadget_disass, 'is stricly clean'
 
         # obvious memory write

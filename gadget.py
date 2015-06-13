@@ -81,7 +81,7 @@ class Gadget(object):
 
         self._is_chainable, self._stackoffset_for_chaining = self._is_chainable_gadget()
         self._is_stackpivot, self._stackpivot_offset = self._is_stackpivot_gadget()
-        self._is_stricly_clean = self._is_stricly_clean()
+        self._is_strictly_clean = self._is_strictly_clean()
 
     def _is_chainable_gadget(self):
         '''Checking if EIP = [ESP + X]'''
@@ -98,7 +98,7 @@ class Gadget(object):
             return True, eip.a.disp
         return False, None
 
-    def _is_stricly_clean(self):
+    def _is_strictly_clean(self):
         '''A clean gadget is a gadget that won't try to read/write to memory we can't control;
         I assume the memory controllable is [ESP + X] basically.
 
