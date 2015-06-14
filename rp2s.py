@@ -375,7 +375,7 @@ def main():
     if args.strictly_clean:
         for candidate in candidates:
             if candidate._is_strictly_clean:
-                print candidate
+                print candidate, '\n'
     else:
         find_natural_primitive_gadgets(candidates)
     return 0
