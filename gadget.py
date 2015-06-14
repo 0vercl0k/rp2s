@@ -176,6 +176,7 @@ class Gadget(object):
         s = []
         s.append('Gadget: %s; %s' % (self._disassembly, repr(self._bytes)[ : 40]))
         s.append('  -> Preserved registers: %s' % ', '.join(map(str, self.preserved_registers)))
+        s.append('  -> Strictly clean: %s' % self._is_strictly_clean)
         s.append('  -> Chainable from stack? %s' % self._is_chainable)
         if self._is_chainable:
             s.append('    -> Stack-offset to chain: %s' % self._stackoffset_for_chaining)
@@ -184,7 +185,14 @@ class Gadget(object):
             s.append('    -> Stack-offset to chain: %s' % self._stackpivot_offset)
         return '\n'.join(s)
 
-    # XXX: I want Gadget instances being able to be stored in a set; do what is necessary to make it happen. hash?eq?
+    def __key(self):
+        return self._bytes
+
+    def __eq__(self, y):
+        return self.__key() == y.__key()
+
+    def __hash__(self):
+        return hash(self.__key())
 
 def main(argc, argv):
     return 1

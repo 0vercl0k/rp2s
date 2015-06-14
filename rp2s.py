@@ -305,6 +305,7 @@ def main():
     # arg_parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
     arg_parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
     arg_parser.add_argument('--max-gadgets', type = int, default = -1, help = 'The maximum amount of gadgets you want to extract from `file`')
+    arg_parser.add_argument('--strictly-clean', action = 'store_true', help = 'Display only stricly clean gadgets')
     args = arg_parser.parse_args()
     
     db_parser = None
@@ -321,10 +322,8 @@ def main():
 
     # if args.nprocesses == 0:
     #     args.nprocesses = multiprocessing.cpu_count()
-
-    if args.run_tests is None or args.file is None:
-        if args.run_tests is None and args.file is None:
-            arg_parser.print_help()
+    if args.run_tests == False and args.file is None:
+        arg_parser.print_help()
         return 0
 
     if args.parser_template.lower().startswith('rp'):
@@ -338,9 +337,10 @@ def main():
         args.max_gadgets = None
 
     t1 = time.time()
-    candidates = list()
+    candidates = set()
     for gadget in db_parser:
-        candidates.append(gadget)
+        candidates.add(gadget)
+        t.append(gadget)
         if (len(candidates) % 2000) == 0 and len(candidates) != 0:
             print '>> Analyzed %d gadgets so far...' % len(candidates)
         if args.max_gadgets is not None and min(len(candidates), args.max_gadgets) == args.max_gadgets:
@@ -372,12 +372,15 @@ def main():
     #     t2 = time.time()
 
     print '> Loaded %d unique candidates in %d s' % (len(candidates), t2 - t1)
-    find_natural_primitive_gadgets(candidates)
-    # try_autorop_linux_execve_x86(candidates, args)
+    if args.strictly_clean:
+        for candidate in candidates:
+            if candidate._is_strictly_clean:
+                print candidate
+    else:
+        find_natural_primitive_gadgets(candidates)
     return 0
     # TODO:
     #  Inequations: why do they actually work?:D
-    # Add preserved registers
 
     # Show case: Pivot ; EIP = ESP
     # cpu_state_end_target = SymbolicCpuX86TargetedState()

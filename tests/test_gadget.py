@@ -51,10 +51,6 @@ class TestGadget(unittest.TestCase):
         self.assertTrue(gadget.Gadget(gadget_code)._is_strictly_clean)
         print '>', gadget_disass, 'is strictly clean'
 
-
-        # obvious memory read write
-
-        # obvious memory write read
         # 'hidden' memory read
         gadget_code, gadget_disass = '\x8b\x18\xbb\x01\x00\x00\x00\xc3', 'mov ebx, [eax] ; mov ebx, 1 ; ret'
         self.assertFalse(gadget.Gadget(gadget_code)._is_strictly_clean)

@@ -21,6 +21,7 @@
 
 import sys
 import gadget
+import traceback
 
 class GadgetDbParser(object):
     def __init__(self, filepath):
@@ -37,11 +38,13 @@ def get_gadgets_from_file_rp(filepath):
                     continue
                 _, second_part = line.split(' ;  ')
                 bytes, _ = second_part.split(' (')
-                g = gadget.Gadget(bytes)
+                g = gadget.Gadget(bytes.decode('string_escape'))
                 yield g
             except Exception, e:
-                print str(e)
-                pass
+                print '<get_gadgets_from_file_rp>'.center(60, '-')
+                traceback.print_exc(file=sys.stdout)
+                print '</get_gadgets_from_file_rp>'.center(60, '-')
+
     raise StopIteration()
 
 class Rp(GadgetDbParser):
