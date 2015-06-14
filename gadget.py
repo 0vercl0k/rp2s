@@ -91,11 +91,15 @@ class Gadget(object):
         return False, None
 
     def _is_stackpivot_gadget(self):
-        '''We assume the gadget pivots the stack enough when EIP is taken in [ESP + X] with
-        0x100 <= X'''
-        eip = self._mapper[cpu.eip]
-        if eip._is_mem and eip.a.base._is_reg and eip.a.base.ref == 'esp' and 0x100 <= eip.a.disp:
-            return True, eip.a.disp
+        '''We assume the gadget pivots the stack enough when ESP is ESP + X at the end with 0x100 <= X'''
+        esp = self._mapper[cpu.esp]
+        if isinstance(esp, op):
+            if esp.l._is_reg and esp.l.ref == 'esp' and esp.r._is_cst and 0x100 <= esp.r.v:
+                return True, esp.r.v
+
+            if esp.r._is_reg and esp.r.ref == 'esp' and esp.l._is_cst and 0x100 <= esp.l.v:
+                return True, esp.l.v
+
         return False, None
 
     def _is_strictly_clean(self):
@@ -182,7 +186,7 @@ class Gadget(object):
             s.append('    -> Stack-offset to chain: %s' % self._stackoffset_for_chaining)
         s.append('  -> Enough to pivot the stack? %s' % self._is_stackpivot)
         if self._is_stackpivot:
-            s.append('    -> Stack-offset to chain: %s' % self._stackpivot_offset)
+            s.append('    -> %s bytes pivot' % self._stackpivot_offset)
         return '\n'.join(s)
 
     def __key(self):

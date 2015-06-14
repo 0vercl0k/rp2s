@@ -340,7 +340,6 @@ def main():
     candidates = set()
     for gadget in db_parser:
         candidates.add(gadget)
-        t.append(gadget)
         if (len(candidates) % 2000) == 0 and len(candidates) != 0:
             print '>> Analyzed %d gadgets so far...' % len(candidates)
         if args.max_gadgets is not None and min(len(candidates), args.max_gadgets) == args.max_gadgets:
