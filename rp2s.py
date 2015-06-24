@@ -53,6 +53,7 @@ import traceback
 import cPickle
 import unittest
 
+import gadget
 import symexec
 import dbparser
 import utils
@@ -298,6 +299,54 @@ def find_natural_primitive_gadgets(gadgets):
     display_dict_primitives('PN1', PN1)
     display_dict_primitives('PN2', PN2)
 
+def check_equivalent_opt(s):
+    '''You are supposed to pass something like "\\x41\\x42;eax,ebx"'''
+    r = True
+    allowed_values = [ 'eax', 'ebx', 'ecx', 'edx', 'esi', 'edi', 'ebp', 'esp', 'eip', 'eflags', 'mem' ]
+    if ';' in s:
+        _, y = s.split(';')
+        if ',' in y:
+            for x in y.split(','):
+                if x not in allowed_values:
+                    r = False
+                    break
+        else:
+            r = y in allowed_values
+    else:
+        r = False
+
+    return r
+
+def build_cpu_context_from_equivalent_opt(s):
+    assembly, ctx = s.split(';')
+    g = gadget.Gadget(
+        assembly.decode('string_escape')
+    )
+
+    tr = {
+        'eax' : cpu.eax,
+        'ebx' : cpu.ebx,
+        'ecx' : cpu.ecx,
+        'edx' : cpu.edx,
+        'esi' : cpu.esi,
+        'edi' : cpu.edi,
+        'ebp' : cpu.ebp,
+        'esp' : cpu.esp,
+        'eflags' : cpu.eflags
+    }
+
+    to_extract = [ ]
+    if ',' in ctx:
+        ctx = ctx.split(',')
+    else:
+        ctx = [ ctx ]
+
+    for reg in ctx:
+        if reg != 'mem':
+            to_extract.append(tr[reg])
+        #XXX: TODO mem
+    return g[to_extract]
+
 def main():
     arg_parser = argparse.ArgumentParser(description = 'XXX: not sure what it is going to do exactly so waiting for that.')
     arg_parser.add_argument('--run-tests', action = 'store_true', help = 'Run the unit tests')
@@ -306,6 +355,7 @@ def main():
     arg_parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
     arg_parser.add_argument('--max-gadgets', type = int, default = -1, help = 'The maximum amount of gadgets you want to extract from `file`')
     arg_parser.add_argument('--strictly-clean', action = 'store_true', help = 'Display only stricly clean gadgets')
+    arg_parser.add_argument('--equivalent', '--eq', type = str, help = 'Find gadgets equivalent to the assembly you passed')
     args = arg_parser.parse_args()
     
     db_parser = None
@@ -345,38 +395,29 @@ def main():
         if args.max_gadgets is not None and min(len(candidates), args.max_gadgets) == args.max_gadgets:
             break
     t2 = time.time()
-    # db_path = os.path.join(os.path.dirname(args.file), '%s.db' % os.path.basename(args.file))
-    # t1 = None
-    # candidates = []
-    # if os.path.isfile(db_path) == False:
-    #     print '> Building the list of gadgets since you do not have an existing database (may take time)..'
-    #     t1 = time.time()
-    #     m = multiprocessing.Manager()
-    #     candidates = dict(build_candidates(m, args.file, args.nprocesses, maxtuples = 0))
-    #     m.shutdown()
-    #     t2 = time.time()
-    #     print '> Serializing the candidates into %s' % db_path
-    #     with open(db_path, 'wb') as f:
-    #         for candidate in candidates.itervalues():
-    #             candidate.serialize(f)
-    # else:
-    #     print '> Loading the candidates from the db..'
-    #     t1 = time.time()
-    #     with open(db_path, 'rb') as f:
-    #         while len(candidates) < 100000:
-    #             try:
-    #                 candidates.append(Gadget.unserialize(f))
-    #             except EOFError:
-    #                 break
-    #     t2 = time.time()
 
     print '> Loaded %d unique candidates in %d s' % (len(candidates), t2 - t1)
     if args.strictly_clean:
+        print 'STRICTLY CLEAN'.center(80, '=')
         for candidate in candidates:
             if candidate._is_strictly_clean:
                 print candidate, '\n'
-    else:
-        find_natural_primitive_gadgets(candidates)
+
+    if args.equivalent:
+        if check_equivalent_opt(args.equivalent):
+            print 'EQUIVALENT'.center(80, '=')
+            targeted_state = build_cpu_context_from_equivalent_opt(
+                args.equivalent
+            )
+            for candidate in candidates:
+                if utils.are_cpu_states_equivalent(targeted_state, candidate):
+                    print candidate, '\n'
+        else:
+            print '--equivalent works this way: assembly;registers,you,want,to,extract'
+            return -1
+
+    # else:
+    #     find_natural_primitive_gadgets(candidates)
     return 0
     # TODO:
     #  Inequations: why do they actually work?:D
@@ -446,3 +487,29 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
+    # db_path = os.path.join(os.path.dirname(args.file), '%s.db' % os.path.basename(args.file))
+    # t1 = None
+    # candidates = []
+    # if os.path.isfile(db_path) == False:
+    #     print '> Building the list of gadgets since you do not have an existing database (may take time)..'
+    #     t1 = time.time()
+    #     m = multiprocessing.Manager()
+    #     candidates = dict(build_candidates(m, args.file, args.nprocesses, maxtuples = 0))
+    #     m.shutdown()
+    #     t2 = time.time()
+    #     print '> Serializing the candidates into %s' % db_path
+    #     with open(db_path, 'wb') as f:
+    #         for candidate in candidates.itervalues():
+    #             candidate.serialize(f)
+    # else:
+    #     print '> Loading the candidates from the db..'
+    #     t1 = time.time()
+    #     with open(db_path, 'rb') as f:
+    #         while len(candidates) < 100000:
+    #             try:
+    #                 candidates.append(Gadget.unserialize(f))
+    #             except EOFError:
+    #                 break
+    #     t2 = time.time()
+

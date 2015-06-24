@@ -30,16 +30,20 @@ class GadgetDbParser(object):
     def __iter__(self):
         raise NotImplementedError('Inherit & implement it yourself')
 
+def parse_one_line_rp(line):
+    if ' ;  ' not in line:
+        return None
+    _, second_part = line.split(' ;  ')
+    bytes, _ = second_part.split(' (')
+    return gadget.Gadget(bytes.decode('string_escape'))
+
 def get_gadgets_from_file_rp(filepath):
     with open(filepath, 'r') as f:
         for line in f.readlines():
             try:
-                if ' ;  ' not in line:
-                    continue
-                _, second_part = line.split(' ;  ')
-                bytes, _ = second_part.split(' (')
-                g = gadget.Gadget(bytes.decode('string_escape'))
-                yield g
+                l = parse_one_line_rp(line)
+                if l:
+                    yield l 
             except Exception, e:
                 print '<get_gadgets_from_file_rp>'.center(60, '-')
                 traceback.print_exc(file=sys.stdout)
