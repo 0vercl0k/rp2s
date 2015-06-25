@@ -22,6 +22,9 @@
 import sys
 import gadget
 import traceback
+import multiprocessing
+import os
+from amoco.db import Session
 
 class GadgetDbParser(object):
     def __init__(self, filepath):
@@ -46,7 +49,7 @@ def get_gadgets_from_file_rp(filepath):
                     yield l 
             except Exception, e:
                 print '<get_gadgets_from_file_rp>'.center(60, '-')
-                traceback.print_exc(file=sys.stdout)
+                traceback.print_exc(file = sys.stdout)
                 print '</get_gadgets_from_file_rp>'.center(60, '-')
 
     raise StopIteration()
@@ -61,6 +64,78 @@ class Rp(GadgetDbParser):
 
     def next(self):
         return self.it.next()
+
+def consumer_worker_rp(q_work, q_res, filepath):
+    head, tail = os.path.split(filepath)
+    dbname = '%s-%s.temp.zodb' % (tail, multiprocessing.current_process().name)
+    dbfilepath = os.path.join(head, dbname)
+    s = Session(dbfilepath)
+
+    while True:
+        line = q_work.get()
+        if line is None:
+            break
+        try:
+            gadget = parse_one_line_rp(line)
+            s.add(gadget._bytes, gadget)
+        except Exception, e:
+            print '<consumer_worker_rp>'.center(60, '-')
+            traceback.print_exc(file = sys.stdout)
+            print '</consumer_worker_rp>'.center(60, '-')
+    s.commit()
+    s.close()
+    q_res.put(dbfilepath)
+
+def get_zodb_session_from_rp_database_with_workers(filepath, nworkers):
+    head, tail = os.path.split(filepath)
+    zodb_final_path = os.path.join(head, '%s.zodb' % tail)
+    final_s = None
+    if os.path.isfile(zodb_final_path) == False:
+        # We need to create everything, let's go!
+        q_work = multiprocessing.Queue()
+        q_res = multiprocessing.Queue()
+        workers = [
+            multiprocessing.Process(
+                target = consumer_worker_rp,
+                args = (q_work, q_res, filepath))
+            for _ in range(nworkers)
+        ]
+
+        for worker in workers:
+            worker.start()
+
+        with open(filepath, 'r') as f:
+            for line in f.readlines():
+                q_work.put(line)
+
+        for _ in workers:
+            q_work.put(None)
+
+        q_work.close()
+        q_work.join_thread()
+
+        for worker in workers:
+            worker.join()
+
+        # Now we need to merge them
+        final_s = Session(zodb_final_path)
+        while q_res.empty() == False:
+            dbfilepath = q_res.get()
+            s = Session(dbfilepath)
+            for bytes, gadget in s.root.iteritems():
+                final_s.add(bytes, gadget)
+            s.commit()
+            s.close()
+            for suffix in ('', 'index', 'lock', 'tmp'):
+                try:
+                    os.remove('%s.%s' % (dbfilepath, suffix))
+                except:
+                    pass
+    
+    if final_s is None:
+        final_s = Session(zodb_final_path)
+
+    return final_s
 
 def main(argc, argv):
     return 1

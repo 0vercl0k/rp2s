@@ -29,7 +29,7 @@ import traceback
 import os
 from amoco.db import Session
 
-def consumer_worker(q_work, q_res, filepath):
+def consumer_worker_rp(q_work, q_res, filepath):
     head, tail = os.path.split(filepath)
     dbname = '%s-%s.temp.zodb' % (tail, multiprocessing.current_process().name)
     dbfilepath = os.path.join(head, dbname)
@@ -47,10 +47,10 @@ def consumer_worker(q_work, q_res, filepath):
             print '<consumer_worker>'.center(60, '-')
             traceback.print_exc(file = sys.stdout)
             print '</consumer_worker>'.center(60, '-')
-
+    s.close()
     q_res.put(dbfilepath)
 
-def create_zodb_database_with_workers(filepath):
+def create_zodb_database_with_workers_rp(filepath):
     t1 = time.time()
     q_work = multiprocessing.Queue()
     q_res = multiprocessing.Queue()
@@ -62,6 +62,9 @@ def create_zodb_database_with_workers(filepath):
         for line in f.readlines():
             q_work.put(line)
 
+    for _ in workers:
+        q_work.put(None)
+
     q_work.close()
     q_work.join_thread()
 
@@ -70,13 +73,40 @@ def create_zodb_database_with_workers(filepath):
 
     t2 = time.time()
     print 'First step done in', t2 - t1
+
+    head, tail = os.path.split(filepath)
+    final_s = Session(
+        os.path.join(head, '%s.zodb' % tail)
+    )
     while q_res.empty() == False:
         dbfilepath = q_res.get()
         print '> Opening', dbfilepath
+        s = Session(dbfilepath)
+        for bytes, gadget in s.root.iteritems():
+            final_s.add(bytes, gadget)
+        s.commit()
+        s.close()
+        for suffix in ('', 'index', 'lock', 'tmp'):
+            try:
+                os.remove('%s.%s' % (dbfilepath, suffix))
+            except:
+                pass
         print '> Done with', dbfilepath
+    final_s.close()
 
 def main(argc, argv):
-    create_zodb_database_with_workers(r'D:\Codes\rp2s\libc_gadgets.txt')
+    f = r'D:\Codes\rp2s\libc_gadgets.txt'
+    # f = r'D:\Codes\rp2s\test_gadgets.txt'
+    head, tail = os.path.split(f)
+    if os.path.isfile(os.path.join(head, '%s.zodb' % tail)) == False:
+        print 'Did not find any existing db, creating one..'
+        create_zodb_database_with_workers(f)
+
+    print 'Loading db..'
+    s = Session(os.path.join(head, '%s.zodb' % tail))
+    print '%d records found in it' % len(s.root.keys())
+    # for _, gadget in s.root.iteritems():
+    #     print gadget
     return 1
 
 if __name__ == '__main__':

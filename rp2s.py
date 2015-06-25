@@ -347,11 +347,32 @@ def build_cpu_context_from_equivalent_opt(s):
         #XXX: TODO mem
     return g[to_extract]
 
+def consumer_worker_rp(q_work, q_res, filepath):
+    head, tail = os.path.split(filepath)
+    dbname = '%s-%s.temp.zodb' % (tail, multiprocessing.current_process().name)
+    dbfilepath = os.path.join(head, dbname)
+    s = Session(dbfilepath)
+
+    while True:
+        line = q_work.get()
+        if line is None:
+            break
+        try:
+            gadget = dbparser.parse_one_line_rp(line)
+            s.add(gadget._bytes, gadget)
+            s.commit()
+        except Exception, e:
+            print '<consumer_worker>'.center(60, '-')
+            traceback.print_exc(file = sys.stdout)
+            print '</consumer_worker>'.center(60, '-')
+    s.close()
+    q_res.put(dbfilepath)
+
 def main():
     arg_parser = argparse.ArgumentParser(description = 'XXX: not sure what it is going to do exactly so waiting for that.')
     arg_parser.add_argument('--run-tests', action = 'store_true', help = 'Run the unit tests')
     arg_parser.add_argument('--file', type = str, help = 'The files with every available gadgets you have')
-    # arg_parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
+    arg_parser.add_argument('--nprocesses', type = int, default = 0, help = 'The default value will be the number of CPUs you have')
     arg_parser.add_argument('--parser-template', type = str, default = 'rp', help = 'The parser template you want to use; default value is "rp"')
     arg_parser.add_argument('--max-gadgets', type = int, default = -1, help = 'The maximum amount of gadgets you want to extract from `file`')
     arg_parser.add_argument('--strictly-clean', action = 'store_true', help = 'Display only stricly clean gadgets')
@@ -370,8 +391,9 @@ def main():
         # use the basic test runner that outputs to sys.stderr
         unittest.TextTestRunner().run(suite)
 
-    # if args.nprocesses == 0:
-    #     args.nprocesses = multiprocessing.cpu_count()
+    if args.nprocesses == 0:
+        args.nprocesses = multiprocessing.cpu_count()
+
     if args.run_tests == False and args.file is None:
         arg_parser.print_help()
         return 0
@@ -387,16 +409,11 @@ def main():
         args.max_gadgets = None
 
     t1 = time.time()
-    candidates = set()
-    for gadget in db_parser:
-        candidates.add(gadget)
-        if (len(candidates) % 2000) == 0 and len(candidates) != 0:
-            print '>> Analyzed %d gadgets so far...' % len(candidates)
-        if args.max_gadgets is not None and min(len(candidates), args.max_gadgets) == args.max_gadgets:
-            break
+    zodb_session = dbparser.get_zodb_session_from_rp_database_with_workers(args.file, args.nprocesses)
+    candidates = zodb_session.root.itervalues()
     t2 = time.time()
 
-    print '> Loaded %d unique candidates in %d s' % (len(candidates), t2 - t1)
+    print '> Loaded %d unique candidates in %d s' % (len(list(candidates)), t2 - t1)
     if args.strictly_clean:
         print 'STRICTLY CLEAN'.center(80, '=')
         for candidate in candidates:
