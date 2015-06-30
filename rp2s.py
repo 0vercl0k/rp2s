@@ -410,10 +410,11 @@ def main():
 
     t1 = time.time()
     zodb_session = dbparser.get_zodb_session_from_rp_database_with_workers(args.file, args.nprocesses)
-    candidates = zodb_session.root.itervalues()
+    candidates = list(zodb_session)
     t2 = time.time()
 
-    print '> Loaded %d unique candidates in %d s' % (len(list(candidates)), t2 - t1)
+    n = len(candidates)
+    print '> Loaded %d unique candidates in %d s' % (n, t2 - t1)
     if args.strictly_clean:
         print 'STRICTLY CLEAN'.center(80, '=')
         for candidate in candidates:

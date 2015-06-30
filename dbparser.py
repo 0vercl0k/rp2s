@@ -24,7 +24,53 @@ import gadget
 import traceback
 import multiprocessing
 import os
-from amoco.db import Session
+import transaction
+from amoco.code import mapper, block
+from amoco.cas.expressions import exp
+from amoco.db import db_interface
+from ZODB import DB, FileStorage
+from persistent import Persistent
+
+class ZODBGadgetDatabase(object):
+    def __init__(self, filename):
+        self.storage = FileStorage.FileStorage(filename)
+        self.db = DB(self.storage)
+        self.conn = self.db.open()
+        self.root = self.conn.root()
+
+    def add(self, key, obj):
+        assert isinstance(obj, dict)
+        x = obj
+        for key, value in x.iteritems():
+            if isinstance(value, (block, mapper, exp)):
+                # replace it with its serializable version
+                x[key] = db_interface(value)
+
+        self.root[key] = x
+
+    def commit(self):
+        transaction.commit()
+
+    def get(self, key):
+        r = self.root[key]
+        if isinstance(r, dict):
+            r = gadget.Gadget(
+                r['bytes'], r['mapper'].build(), r['is_strictly_clean']
+            )
+        return r
+
+    def __len__(self):
+        return len(self.root.keys())
+
+    def __iter__(self):
+        for k, _ in self.root.iteritems():
+            yield self.get(k)
+        raise StopIteration
+
+    def close(self):
+        self.conn.close()
+        self.db.close()
+        self.storage.close()
 
 class GadgetDbParser(object):
     def __init__(self, filepath):
@@ -69,7 +115,7 @@ def consumer_worker_rp(q_work, q_res, filepath):
     head, tail = os.path.split(filepath)
     dbname = '%s-%s.temp.zodb' % (tail, multiprocessing.current_process().name)
     dbfilepath = os.path.join(head, dbname)
-    s = Session(dbfilepath)
+    s = ZODBGadgetDatabase(dbfilepath)
 
     while True:
         line = q_work.get()
@@ -77,7 +123,14 @@ def consumer_worker_rp(q_work, q_res, filepath):
             break
         try:
             gadget = parse_one_line_rp(line)
-            s.add(gadget._bytes, gadget)
+            s.add(
+                gadget._bytes, 
+                {
+                    'bytes' : gadget._bytes,
+                    'mapper' : gadget._mapper,
+                    'is_strictly_clean' : gadget._is_strictly_clean
+                }
+            )
         except Exception, e:
             print '<consumer_worker_rp>'.center(60, '-')
             traceback.print_exc(file = sys.stdout)
@@ -118,13 +171,14 @@ def get_zodb_session_from_rp_database_with_workers(filepath, nworkers):
             worker.join()
 
         # Now we need to merge them
-        final_s = Session(zodb_final_path)
+        final_s = ZODBGadgetDatabase(zodb_final_path)
         while q_res.empty() == False:
             dbfilepath = q_res.get()
-            s = Session(dbfilepath)
-            for bytes, gadget in s.root.iteritems():
+            s = ZODBGadgetDatabase(dbfilepath)
+            for bytes, gadget in s:
+                print type(gadget)
                 final_s.add(bytes, gadget)
-            s.commit()
+            final_s.commit()
             s.close()
             for suffix in ('', 'index', 'lock', 'tmp'):
                 try:
@@ -133,7 +187,7 @@ def get_zodb_session_from_rp_database_with_workers(filepath, nworkers):
                     pass
     
     if final_s is None:
-        final_s = Session(zodb_final_path)
+        final_s = ZODBGadgetDatabase(zodb_final_path)
 
     return final_s
 

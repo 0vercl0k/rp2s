@@ -66,6 +66,9 @@ def sym_exec_gadget_and_get_mappers_incremental(code, address_code = 0xdeadbeef)
     loc = cpu.cst(address_code, 32)
     while len(bytes) > 0:
         i = cpu.disassemble(bytes, address = loc)
+        if i is None:
+            print 'amoco does not seem to know this instruction: %r' % bytes
+            raise NotImplementedError
         l = i.length
         instrs.append(i)
         bytes = bytes[l : ]
